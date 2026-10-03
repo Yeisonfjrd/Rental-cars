@@ -7,7 +7,6 @@ import { auth } from "@clerk/nextjs/server";
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
     apiVersion: "2024-04-10",
   });
-  console.log(process.env.STRIPE_SECRET_KEY);
 
 // Permisos CORS
 const corsHeaders = {
@@ -23,10 +22,18 @@ export async function POST(req: Request) {
       return new NextResponse(JSON.stringify({ error: "No autorizado" }), { status: 401 });
     }
 
-    const { carId, priceDay, startDate, endDate, carName } = await req.json();
-    if (!carId || !priceDay || !startDate || !endDate || !carName) {
+    const { carId, startDate, endDate } = await req.json();
+    if (!carId || !startDate || !endDate) {
       return new NextResponse(JSON.stringify({ error: "Faltan datos requeridos" }), { status: 400 });
     }
+
+    // El precio y el nombre salen de la base, no del cliente
+    const car = await db.car.findUnique({ where: { id: carId } });
+    if (!car || !car.isPublish) {
+      return new NextResponse(JSON.stringify({ error: "Coche no disponible" }), { status: 404 });
+    }
+    const priceDay = Number(car.priceDay);
+    const carName = car.name;
 
     // Convertir fechas
     const start = new Date(startDate);
@@ -36,8 +43,8 @@ export async function POST(req: Request) {
       return new NextResponse(JSON.stringify({ error: "Fechas inválidas" }), { status: 400 });
     }
 
-    const totalAmount = Number(priceDay) * days;
-    const totalAmountStripe = totalAmount * 100; // Stripe usa céntimos
+    const totalAmount = priceDay * days;
+    const totalAmountStripe = Math.round(totalAmount * 100); // Stripe usa céntimos
 
     // Crear orden en la base de datos
     const order = await db.order.create({
